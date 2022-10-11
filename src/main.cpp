@@ -11,13 +11,13 @@ using namespace mcfile::je;
 using namespace mcfile::stream;
 namespace fs = std::filesystem;
 
-static string ProcessChunk(World w, int rx, int rz, int cx, int cz, fs::path tmp) {
+static string ProcessChunk(World w, int rx, int rz, int cx, int cz, int by0, fs::path tmp) {
 	auto region = w.region(rx, rz);
 	auto chunk = region->writableChunkAt(cx, cz);
 	auto dirt = make_shared<Block const>("minecraft:dirt");
 	SetBlockOptions op;
 	op.fRemoveTileEntity = true;
-	for (int y = -63; y <= 47; y++) {
+	for (int y = -63; y <= by0; y++) {
 		for (int x = chunk->minBlockX(); x <= chunk->maxBlockX(); x++) {
 			for (int z = chunk->minBlockZ(); z <= chunk->maxBlockZ(); z++) {
 				chunk->setBlockAt(x, y, z, dirt, op);
@@ -36,9 +36,10 @@ int main(int argc, char* argv[]) {
 	int bx1 = -1;
 	int bz0 = 1;
 	int bz1 = -1;
+	int by0 = 47;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "i:o:x:X:z:Z:")) != -1) {
+	while ((opt = getopt(argc, argv, "i:o:x:X:y:z:Z:")) != -1) {
 		switch (opt) {
 		case 'i':
 			in = fs::path(optarg);
@@ -63,6 +64,11 @@ int main(int argc, char* argv[]) {
 			break;
 		case 'Z':
 			if (sscanf(optarg, "%d", &bz1) != 1) {
+				return -1;
+			}
+			break;
+		case 'y':
+			if (sscanf(optarg, "%d", &by0) != 1) {
 				return -1;
 			}
 			break;
@@ -122,7 +128,7 @@ int main(int argc, char* argv[]) {
 			for (int cx = region->minChunkX(); cx <= region->maxChunkX(); cx++) {
 				for (int cz = region->minChunkZ(); cz <= region->maxChunkZ(); cz++) {
 					if (cx0 <= cx && cx <= cx1 && cz0 <= cz && cz <= cz1) {
-						futures.push_back(queue.enqueue(ProcessChunk, w, rx, rz, cx, cz, *tmpRegion));
+						futures.push_back(queue.enqueue(ProcessChunk, w, rx, rz, cx, cz, by0, *tmpRegion));
 					} else {
 						cout << "[" << cx << ", " << cz << "] clear" << endl;
 						fs::remove(*tmpRegion / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
