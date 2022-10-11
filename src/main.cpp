@@ -1,13 +1,33 @@
 #include <minecraft-file.hpp>
 #include <getopt.h>
+#include <hwm/task/task_queue.hpp>
 
 #include <iostream>
+#include <vector>
 
 using namespace std;
 using namespace mcfile;
 using namespace mcfile::je;
 using namespace mcfile::stream;
 namespace fs = std::filesystem;
+
+static string ProcessChunk(World w, int rx, int rz, int cx, int cz, fs::path tmp) {
+	auto region = w.region(rx, rz);
+	auto chunk = region->writableChunkAt(cx, cz);
+	auto dirt = make_shared<Block const>("minecraft:dirt");
+	SetBlockOptions op;
+	op.fRemoveTileEntity = true;
+	for (int y = -63; y <= 47; y++) {
+		for (int x = chunk->minBlockX(); x <= chunk->maxBlockX(); x++) {
+			for (int z = chunk->minBlockZ(); z <= chunk->maxBlockZ(); z++) {
+				chunk->setBlockAt(x, y, z, dirt, op);
+			}
+		}
+	}
+	auto rfs = make_shared<FileOutputStream>(tmp / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
+	chunk->write(*rfs);
+	return "[" + to_string(cx) + ", " + to_string(cz) + "] retain";
+}
 
 int main(int argc, char* argv[]) {
 	fs::path in;
@@ -73,6 +93,8 @@ int main(int argc, char* argv[]) {
 		fs::copy_file(it.path(), out / "data" / it.path().filename(), fs::copy_options::overwrite_existing);
 	}
 
+	hwm::task_queue queue(thread::hardware_concurrency());
+
 	for (int rx = rx0; rx <= rx1; rx++) {
 		for (int rz = rz0; rz <= rz1; rz++) {
 			auto fileName = Region::GetDefaultRegionFileName(rx, rz);
@@ -85,35 +107,38 @@ int main(int argc, char* argv[]) {
 				fs::copy_file(in / "entities" / fileName, out / "entities" / fileName, fs::copy_options::overwrite_existing);
 			}
 
+			vector<future<string>> futures;
+
 			auto region = w.region(rx, rz);
-			auto tmp = File::CreateTempDir(fs::temp_directory_path());
-			region->exportAllToCompressedNbt(*tmp);
+			auto tmpRegion = File::CreateTempDir(fs::temp_directory_path());
+			region->exportAllToCompressedNbt(*tmpRegion);
+			auto tmpEntities = File::CreateTempDir(fs::temp_directory_path());
+			auto entities = Region::MakeRegion(region->entitiesRegionFilePath());
+			if (fs::exists(entities->fFilePath)) {
+				entities->exportAllToCompressedNbt(*tmpEntities);
+			}
+
 			for (int cx = region->minChunkX(); cx <= region->maxChunkX(); cx++) {
 				for (int cz = region->minChunkZ(); cz <= region->maxChunkZ(); cz++) {
 					if (cx0 <= cx && cx <= cx1 && cz0 <= cz && cz <= cz1) {
-						cout << "retain (" << cx << ", " << cz << ")" << endl;
-						auto chunk = region->writableChunkAt(cx, cz);
-						auto dirt = make_shared<Block const>("minecraft:dirt");
-						SetBlockOptions op;
-						op.fRemoveTileEntity = true;
-						for (int y = -63; y <= 47; y++) {
-							for (int x = chunk->minBlockX(); x <= chunk->maxBlockX(); x++) {
-								for (int z = chunk->minBlockZ(); z <= chunk->maxBlockZ(); z++) {
-									chunk->setBlockAt(x, y, z, dirt, op);
-								}
-							}
-						}
-						auto rfs = make_shared<FileOutputStream>(*tmp / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
-						chunk->write(*rfs);
+						futures.push_back(queue.enqueue(ProcessChunk, w, rx, rz, cx, cz, *tmpRegion));
 					} else {
-						fs::remove(*tmp / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
-						cout << "clear (" << cx << ", " << cz << ")" << endl;
-						region->clearEntities(cx, cz);
+						cout << "[" << cx << ", " << cz << "] clear" << endl;
+						fs::remove(*tmpRegion / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
+						fs::remove(*tmpEntities / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
 					}
 				}
 			}
-			Region::ConcatCompressedNbt(rx, rz, *tmp, out / "region" /  Region::GetDefaultRegionFileName(rx, rz));
-			fs::remove_all(*tmp);
+
+			for (auto& f : futures) {
+				string result = f.get();
+				cout << result << endl;
+			}
+
+			Region::ConcatCompressedNbt(rx, rz, *tmpRegion, out / "region" / fileName);
+			Region::ConcatCompressedNbt(rx, rz, *tmpEntities, out / "entities" / fileName);
+			fs::remove_all(*tmpRegion);
+			fs::remove_all(*tmpEntities);
 		}
 	}
 	return 0;

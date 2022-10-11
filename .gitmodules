@@ -4,3 +4,6 @@
 [submodule "deps/wingetopt"]
 	path = deps/wingetopt
 	url = https://github.com/alex85k/wingetopt.git
+[submodule "deps/hwm.task"]
+	path = deps/hwm.task
+	url = https://github.com/hotwatermorning/hwm.task.git
