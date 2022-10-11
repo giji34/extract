@@ -9,6 +9,7 @@ using namespace std;
 using namespace mcfile;
 using namespace mcfile::je;
 using namespace mcfile::stream;
+using namespace mcfile::nbt;
 namespace fs = std::filesystem;
 
 static void ProcessChunk(World w, int rx, int rz, int cx, int cz, int by0, fs::path tmp) {
@@ -145,5 +146,51 @@ int main(int argc, char* argv[]) {
 			fs::remove_all(*tmpEntities);
 		}
 	}
+
+	if (fs::exists(out / "level.dat")) {
+		auto input = make_shared<GzFileInputStream>(out / "level.dat");
+		auto root = CompoundTag::Read(input, mcfile::Endian::Big);
+		auto data = root->compoundTag("Data");
+		auto worldGenSettings = data->compoundTag("WorldGenSettings");
+		worldGenSettings->set("seed", make_shared<LongTag>(123));
+		auto dimensions = worldGenSettings->compoundTag("dimensions");
+
+		auto overworld = make_shared<CompoundTag>();
+		dimensions->set("minecraft:overworld", overworld);
+
+		auto generator = make_shared<CompoundTag>();
+		overworld->set("generator", generator);
+		overworld->set("type", make_shared<StringTag>("minecraft:overworld"));
+
+		auto settings = make_shared<CompoundTag>();
+		generator->set("settings", settings);
+		generator->set("type", make_shared<StringTag>("minecraft:flat"));
+
+		settings->set("biome", make_shared<StringTag>("minecraft:plains"));
+		settings->set("features", make_shared<ByteTag>(0));
+		settings->set("lake", make_shared<ByteTag>(0));
+		auto structureOverrides = make_shared<ListTag>(Tag::Type::String);
+		settings->set("structure_overrides", structureOverrides);
+		structureOverrides->push_back(make_shared<StringTag>("minecraft:strongholds"));
+		structureOverrides->push_back(make_shared<StringTag>("minecraft:villages"));
+		auto layers = make_shared<ListTag>(Tag::Type::Compound);
+		settings->set("layers", layers);
+		auto bedrock = make_shared<CompoundTag>();
+		bedrock->set("block", make_shared<StringTag>("minecraft:bedrock"));
+		bedrock->set("height", make_shared<IntTag>(1));
+		auto dirt = make_shared<CompoundTag>();
+		dirt->set("block", make_shared<StringTag>("minecraft:dirt"));
+		dirt->set("height", make_shared<IntTag>(125));
+		auto grassBlock = make_shared<CompoundTag>();
+		grassBlock->set("block", make_shared<StringTag>("minecraft:grass_block"));
+		grassBlock->set("height", make_shared<IntTag>(1));
+		layers->push_back(bedrock);
+		layers->push_back(dirt);
+		layers->push_back(grassBlock);
+
+		auto output = make_shared<GzFileOutputStream>(out / "level.dat");
+		CompoundTag::Write(*root, output, Endian::Big);
+	}
+
 	return 0;
 }
