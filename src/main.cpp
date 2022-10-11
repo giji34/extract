@@ -82,6 +82,7 @@ int main(int argc, char* argv[]) {
 	int rz1 = Coordinate::RegionFromBlock(bz1);
 
 	for (auto sub : { "region", "data", "entities" }) {
+		fs::remove_all(out / sub);
 		fs::create_directories(out / sub);
 	}
 	World w(out);
