@@ -11,7 +11,7 @@ using namespace mcfile::je;
 using namespace mcfile::stream;
 namespace fs = std::filesystem;
 
-static string ProcessChunk(World w, int rx, int rz, int cx, int cz, int by0, fs::path tmp) {
+static void ProcessChunk(World w, int rx, int rz, int cx, int cz, int by0, fs::path tmp) {
 	auto region = w.region(rx, rz);
 	auto chunk = region->writableChunkAt(cx, cz);
 	auto dirt = make_shared<Block const>("minecraft:dirt");
@@ -26,7 +26,6 @@ static string ProcessChunk(World w, int rx, int rz, int cx, int cz, int by0, fs:
 	}
 	auto rfs = make_shared<FileOutputStream>(tmp / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
 	chunk->write(*rfs);
-	return "[" + to_string(cx) + ", " + to_string(cz) + "] retain";
 }
 
 int main(int argc, char* argv[]) {
@@ -114,7 +113,7 @@ int main(int argc, char* argv[]) {
 				fs::copy_file(in / "entities" / fileName, out / "entities" / fileName, fs::copy_options::overwrite_existing);
 			}
 
-			vector<future<string>> futures;
+			vector<future<void>> futures;
 
 			auto region = w.region(rx, rz);
 			auto tmpRegion = File::CreateTempDir(fs::temp_directory_path());
@@ -130,7 +129,6 @@ int main(int argc, char* argv[]) {
 					if (cx0 <= cx && cx <= cx1 && cz0 <= cz && cz <= cz1) {
 						futures.push_back(queue.enqueue(ProcessChunk, w, rx, rz, cx, cz, by0, *tmpRegion));
 					} else {
-						cout << "[" << cx << ", " << cz << "] clear" << endl;
 						fs::remove(*tmpRegion / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
 						fs::remove(*tmpEntities / Region::GetDefaultCompressedChunkNbtFileName(cx, cz));
 					}
@@ -138,8 +136,7 @@ int main(int argc, char* argv[]) {
 			}
 
 			for (auto& f : futures) {
-				string result = f.get();
-				cout << result << endl;
+				f.get();
 			}
 
 			Region::ConcatCompressedNbt(rx, rz, *tmpRegion, out / "region" / fileName);
